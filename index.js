@@ -20,7 +20,7 @@ const defaultSettings = {
     recentMessages: 0,
     themeMode: 'auto',
     compressLevel: 0, // 0=原图 1=轻度 2=中度 3=强力 4=极限
-    excludedTagPairs: [],
+    excludedTags: [],
     groups: [],
     rules: [],
 };
@@ -314,12 +314,12 @@ function migrateSettings(s) {
     if (typeof s.compressLevel !== 'number' || s.compressLevel < 0 || s.compressLevel > 4) {
         s.compressLevel = 0;
     }
-    if (!Array.isArray(s.excludedTagPairs)) s.excludedTagPairs = [];
-    s.excludedTagPairs = s.excludedTagPairs.filter(pair =>
-        pair && typeof pair.open === 'string' && pair.open.trim() &&
-        typeof pair.close === 'string' && pair.close.trim() &&
-        pair.open.trim() !== pair.close.trim()
-    ).map(pair => ({ open: pair.open.trim(), close: pair.close.trim() }));
+    if (!Array.isArray(s.excludedTags)) {
+        const oldPairs = Array.isArray(s.excludedTagPairs) ? s.excludedTagPairs : [];
+        s.excludedTags = oldPairs.map(pair => pair?.open).filter(tag => typeof tag === 'string');
+    }
+    s.excludedTags = s.excludedTags.map(normalizeExcludedTag).filter(Boolean);
+    delete s.excludedTagPairs;
     if (!Array.isArray(s.groups)) s.groups = [];
     s.groups = s.groups.filter(g => g && typeof g.id === 'string');
     for (const g of s.groups) {
@@ -511,20 +511,27 @@ function createImageElement(rule) {
     return wrap;
 }
 
-function parseExcludedTagPairs(value) {
-    return String(value || '').split(/\r?\n/).map(line => {
-        const separator = line.indexOf('|');
-        if (separator < 0) return null;
-        const open = line.slice(0, separator).trim();
-        const close = line.slice(separator + 1).trim();
-        return open && close ? { open, close } : null;
-    }).filter(Boolean);
+function normalizeExcludedTag(value) {
+    const open = String(value || '').trim();
+    const match = open.match(/^<\s*([a-z][a-z\d:-]*)\b[^>]*>$/i);
+    return match ? `<${match[1]}>` : '';
 }
 
-function formatExcludedTagPairs(pairs) {
-    return (Array.isArray(pairs) ? pairs : [])
-        .map(pair => `${pair.open} | ${pair.close}`)
-        .join('\n');
+function parseExcludedTags(value) {
+    return [...new Set(String(value || '').split(/\r?\n/)
+        .map(normalizeExcludedTag)
+        .filter(Boolean))];
+}
+
+function formatExcludedTags(tags) {
+    return (Array.isArray(tags) ? tags : []).join('\n');
+}
+
+function getExcludedTagPairs(tags) {
+    return tags.map(open => {
+        const name = open.match(/^<([a-z][a-z\d:-]*)>$/i)?.[1];
+        return name ? { open, close: `</${name}>` } : null;
+    }).filter(Boolean);
 }
 
 function escapeRegExp(value) {
@@ -637,7 +644,7 @@ function applyRulesToElement(container) {
 
     const rules = s.rules.filter(r => r.enabled !== false && r.pattern && ruleHasImageReady(r));
     if (!rules.length) return;
-    const excludedTagPairs = s.excludedTagPairs || [];
+    const excludedTagPairs = getExcludedTagPairs(s.excludedTags || []);
     const excludedElementNames = getExcludedElementNames(excludedTagPairs);
 
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
@@ -1589,9 +1596,9 @@ function buildSettingsHtml() {
                         </div>
                         <div class="cii-row" style="margin-top:10px; align-items:flex-start;">
                             <label class="cii-inline-label" for="cii-excluded-tags" style="min-width:auto; padding-top:7px;">排除标签</label>
-                            <textarea id="cii-excluded-tags" class="text_pole" rows="3" placeholder="&lt;thinking&gt; | &lt;/thinking&gt;" style="flex:1; min-width:220px; resize:vertical;"></textarea>
+                            <textarea id="cii-excluded-tags" class="text_pole" rows="3" placeholder="&lt;thinking&gt;" style="flex:1; min-width:220px; resize:vertical;"></textarea>
                         </div>
-                        <div class="cii-dim cii-tiny">每行填写一对开始和结束标签，用 | 分隔。标签包住的内容不参与图片匹配；例如：&lt;thinking&gt; | &lt;/thinking&gt;</div>
+                        <div class="cii-dim cii-tiny">每行填写一个开始标签，插件会自动补上结束标签。例如 &lt;thinking&gt; 会同时排除 &lt;thinking&gt; 和 &lt;/thinking&gt; 之间的内容。</div>
                     </div>
 
                     <div class="cii-card">
@@ -1756,7 +1763,7 @@ function bindEvents() {
     $(document)
         .off('input.cii', '#cii-excluded-tags')
         .on('input.cii', '#cii-excluded-tags', function () {
-            getSettings().excludedTagPairs = parseExcludedTagPairs(this.value);
+            getSettings().excludedTags = parseExcludedTags(this.value);
             saveSettings();
             resetProcessing();
             scheduleProcess();
@@ -2642,7 +2649,7 @@ async function loadSettings() {
     $('#cii-enabled').prop('checked', s.enabled !== false);
     $('#cii-maxwidth').val(s.maxWidth || 300);
     $('#cii-recent').val(Math.max(0, Math.floor(Number(s.recentMessages) || 0)));
-    $('#cii-excluded-tags').val(formatExcludedTagPairs(s.excludedTagPairs));
+    $('#cii-excluded-tags').val(formatExcludedTags(s.excludedTags));
     $('#cii-theme').val(s.themeMode || 'auto');
     $('#cii-compress').val(String(s.compressLevel || 0));
     renderRules();

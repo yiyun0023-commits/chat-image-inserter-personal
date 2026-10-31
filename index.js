@@ -644,7 +644,11 @@ function applyRulesToElement(container) {
 
     const rules = s.rules.filter(r => r.enabled !== false && r.pattern && ruleHasImageReady(r));
     if (!rules.length) return;
-    const excludedTagPairs = getExcludedTagPairs(s.excludedTags || []);
+    // Always skip the reasoning section. User-configured tags extend this default.
+    const excludedTagPairs = getExcludedTagPairs([
+        '<thinking>',
+        ...(s.excludedTags || []),
+    ]);
     const excludedElementNames = getExcludedElementNames(excludedTagPairs);
 
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
@@ -1598,7 +1602,7 @@ function buildSettingsHtml() {
                             <label class="cii-inline-label" for="cii-excluded-tags" style="min-width:auto; padding-top:7px;">排除标签</label>
                             <textarea id="cii-excluded-tags" class="text_pole" rows="3" placeholder="&lt;thinking&gt;" style="flex:1; min-width:220px; resize:vertical;"></textarea>
                         </div>
-                        <div class="cii-dim cii-tiny">每行填写一个开始标签，插件会自动补上结束标签。例如 &lt;thinking&gt; 会同时排除 &lt;thinking&gt; 和 &lt;/thinking&gt; 之间的内容。</div>
+                        <div class="cii-dim cii-tiny">&lt;thinking&gt; 思维链默认排除。每行可填写一个额外的开始标签，插件会自动补上结束标签。例如 &lt;private&gt; 会同时排除 &lt;private&gt; 和 &lt;/private&gt; 之间的内容。</div>
                     </div>
 
                     <div class="cii-card">
@@ -2690,3 +2694,4 @@ window.addEventListener('beforeunload', () => {
     }
     urlCache.clear();
 });
+

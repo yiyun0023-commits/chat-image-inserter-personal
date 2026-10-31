@@ -1,4 +1,3 @@
-
 // index.js —— SillyTavern 文字插图扩展 v2.4.1
 // 修复：图片最大宽度设置不生效
 // 基于 v2.4.0
@@ -789,7 +788,7 @@ async function processAllMessages() {
     try {
         const s = getSettings();
         if (!s.enabled) {
-            document.querySelectorAll('#chat .mes_text .cii-img-block').forEach(el => el.remove());
+            document.querySelectorAll('#chat .mes .cii-img-block').forEach(el => el.remove());
             return;
         }
         await ensureAllUrls();
@@ -801,21 +800,28 @@ async function processAllMessages() {
 
         if (recentN > 0) {
             for (let i = 0; i < startIdx; i++) {
-                allMes[i].querySelectorAll('.mes_text').forEach(el => {
-                    const blocks = el.querySelectorAll('.cii-img-block');
-                    if (blocks.length) {
-                        blocks.forEach(b => {
-                            const parent = b.parentNode;
-                            b.remove();
-                            parent?.normalize?.();
-                        });
-                    }
-                    processedHashes.delete(el);
+                allMes[i].querySelectorAll('.cii-img-block').forEach(block => {
+                    const parent = block.parentNode;
+                    block.remove();
+                    parent?.normalize?.();
                 });
+                allMes[i].querySelectorAll('.mes_text').forEach(el => processedHashes.delete(el));
             }
         }
         for (let i = startIdx; i < total; i++) {
-            allMes[i].querySelectorAll('.mes_text').forEach(el => {
+            const message = allMes[i];
+            const textElements = Array.from(message.querySelectorAll('.mes_text'));
+            let removedOutsideBody = false;
+            message.querySelectorAll('.cii-img-block').forEach(block => {
+                if (!block.closest('.mes_text')) {
+                    const parent = block.parentNode;
+                    block.remove();
+                    parent?.normalize?.();
+                    removedOutsideBody = true;
+                }
+            });
+            textElements.forEach(el => {
+                if (removedOutsideBody) processedHashes.delete(el);
                 const text = el.textContent || '';
                 const hash = simpleHash(text);
                 if (processedHashes.get(el) === hash) return;

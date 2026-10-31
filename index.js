@@ -1,3 +1,4 @@
+
 // index.js —— SillyTavern 文字插图扩展 v2.4.1
 // 修复：图片最大宽度设置不生效
 // 基于 v2.4.0
@@ -650,13 +651,14 @@ function applyRulesToElement(container) {
         ...(s.excludedTags || []),
     ]);
     const excludedElementNames = getExcludedElementNames(excludedTagPairs);
+    const reasoningSelector = '.mes_reasoning_details, .mes_reasoning';
 
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
             if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
             const parent = node.parentElement;
             if (!parent) return NodeFilter.FILTER_REJECT;
-            if (parent.closest('script, style')) return NodeFilter.FILTER_REJECT;
+            if (parent.closest(`script, style, ${reasoningSelector}`)) return NodeFilter.FILTER_REJECT;
             for (let el = parent; el; el = el.parentElement) {
                 if (excludedElementNames.has(el.localName?.toLowerCase())) return NodeFilter.FILTER_REJECT;
                 if (el === container) break;

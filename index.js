@@ -338,7 +338,9 @@ function migrateSettings(s) {
         delete rule.imageType;
         if (typeof rule.maxMatches !== 'number') rule.maxMatches = 1;
         if (typeof rule.removeMatched !== 'boolean') rule.removeMatched = false;
-        if (!rule.imagePosition) rule.imagePosition = 'after';
+        if (!['after', 'paragraph', 'start', 'end'].includes(rule.imagePosition)) {
+            rule.imagePosition = 'after';
+        }
         if (typeof rule.enabled !== 'boolean') rule.enabled = true;
         if (typeof rule.groupId !== 'string' || (rule.groupId && !validIds.has(rule.groupId))) {
             rule.groupId = '';
@@ -504,6 +506,21 @@ function createImageElement(rule) {
 
 /* ================= 应用规则到容器 ================= */
 
+function findParagraphElement(node, container) {
+    let el = node.parentElement;
+    let blockFallback = null;
+    while (el && el !== container) {
+        if (el.matches('p, li, blockquote, pre, h1, h2, h3, h4, h5, h6')) return el;
+        const display = window.getComputedStyle(el).display;
+        if (!blockFallback && ['block', 'flow-root', 'list-item', 'flex', 'grid', 'table'].includes(display)) {
+            blockFallback = el;
+        }
+        el = el.parentElement;
+    }
+    // SillyTavern normally renders paragraphs as <p>. Fall back to a block element for alternate markup.
+    return blockFallback || (node.parentElement === container ? node : node.parentElement);
+}
+
 function applyRulesToElement(container) {
     const s = getSettings();
     container.querySelectorAll('.cii-img-block').forEach(el => el.remove());
@@ -544,7 +561,7 @@ function applyRulesToElement(container) {
         byNode.get(m.node).push(m);
     }
 
-    const startImages = [], endImages = [];
+    const startImages = [], endImages = [], paragraphImages = [];
 
     for (const [node, list] of byNode) {
         list.sort((a, b) => b.start - a.start);
@@ -560,6 +577,23 @@ function applyRulesToElement(container) {
 
         for (const m of filtered) {
             const pos = m.rule.imagePosition || 'after';
+            if (pos === 'paragraph') {
+                if (m.rule.removeMatched) {
+                    try {
+                        if (m.end > current.nodeValue.length) continue;
+                        current.nodeValue =
+                            current.nodeValue.slice(0, m.start) +
+                            current.nodeValue.slice(m.end);
+                    } catch (e) { console.warn('[CII] 删除文字失败', e); }
+                }
+                paragraphImages.push({
+                    rule: m.rule,
+                    paragraph: findParagraphElement(node, container),
+                    nodeIdx: m.nodeIdx,
+                    start: m.start,
+                });
+                continue;
+            }
             if (pos === 'start' || pos === 'end') {
                 if (m.rule.removeMatched) {
                     try {
@@ -596,6 +630,17 @@ function applyRulesToElement(container) {
     for (const { rule } of endImages) {
         const block = createImageElement(rule);
         if (block) container.appendChild(block);
+    }
+
+    paragraphImages.sort((a, b) => a.nodeIdx - b.nodeIdx || a.start - b.start);
+    const paragraphAnchors = new Map();
+    for (const { rule, paragraph } of paragraphImages) {
+        if (!paragraph?.parentNode) continue;
+        const anchor = paragraphAnchors.get(paragraph) || paragraph;
+        const block = createImageElement(rule);
+        if (!block) continue;
+        anchor.parentNode.insertBefore(block, anchor.nextSibling);
+        paragraphAnchors.set(paragraph, block);
     }
 }
 
@@ -1086,7 +1131,7 @@ async function importData(file) {
             maxMatches: typeof r.maxMatches === 'number' ? Math.max(0, Math.floor(r.maxMatches)) : 1,
             enabled: r.enabled !== false,
             removeMatched: !!r.removeMatched,
-            imagePosition: ['after', 'start', 'end'].includes(r.imagePosition) ? r.imagePosition : 'after',
+            imagePosition: ['after', 'paragraph', 'start', 'end'].includes(r.imagePosition) ? r.imagePosition : 'after',
             images: [],
         };
 
@@ -1222,6 +1267,7 @@ function buildRuleHtml(rule, globalIndex) {
                     <label class="cii-label">图片位置</label>
                     <select class="text_pole cii-imagepos" style="flex:1;">
                         <option value="after">匹配文字后面</option>
+                        <option value="paragraph">匹配段落后面</option>
                         <option value="start">全文开头</option>
                         <option value="end">全文结尾</option>
                     </select>

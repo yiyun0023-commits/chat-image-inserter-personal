@@ -620,6 +620,34 @@ function getScannableRanges(node, offset, mask) {
     return ranges;
 }
 
+function getMatchableMessageText(messageElement) {
+    try {
+        const context = window.SillyTavern?.getContext?.();
+        const messageId = Number(messageElement?.getAttribute('mesid'));
+        const rawText = context?.chat?.[messageId]?.mes;
+        if (typeof rawText !== 'string') return null;
+
+        // If the model wraps its answer in <content>, use only those body sections.
+        const contentSections = [...rawText.matchAll(/<content\b[^>]*>([\s\S]*?)<\/content\s*>/gi)];
+        let matchableText = contentSections.length
+            ? contentSections.map(section => section[1]).join('\n')
+            : rawText;
+
+        // Remove reasoning and any additional user-configured excluded sections
+        // from the source text before deciding whether a rule can run.
+        const tags = ['<thinking>', ...(getSettings().excludedTags || [])];
+        for (const pair of getExcludedTagPairs(tags)) {
+            const open = escapeRegExp(pair.open);
+            const close = escapeRegExp(pair.close);
+            matchableText = matchableText.replace(new RegExp(`${open}[\\s\\S]*?(?:${close}|$)`, 'gi'), '');
+        }
+        return matchableText;
+    } catch (e) {
+        console.warn('[CII] 读取消息原文失败，改用页面正文', e);
+        return null;
+    }
+}
+
 /* ================= 应用规则到容器 ================= */
 
 function findParagraphElement(node, container) {
@@ -637,12 +665,13 @@ function findParagraphElement(node, container) {
     return blockFallback || (node.parentElement === container ? node : node.parentElement);
 }
 
-function applyRulesToElement(container) {
+function applyRulesToElement(container, matchableMessageText = null) {
     const s = getSettings();
     container.querySelectorAll('.cii-img-block').forEach(el => el.remove());
     container.normalize();
 
-    const rules = s.rules.filter(r => r.enabled !== false && r.pattern && ruleHasImageReady(r));
+    const rules = s.rules.filter(r => r.enabled !== false && r.pattern && ruleHasImageReady(r)
+        && (matchableMessageText === null || findMatches(matchableMessageText, r).length > 0));
     if (!rules.length) return;
     // Always skip the reasoning section. User-configured tags extend this default.
     const excludedTagPairs = getExcludedTagPairs([
@@ -811,6 +840,7 @@ async function processAllMessages() {
         for (let i = startIdx; i < total; i++) {
             const message = allMes[i];
             const textElements = Array.from(message.querySelectorAll('.mes_text'));
+            const matchableMessageText = getMatchableMessageText(message);
             let removedOutsideBody = false;
             message.querySelectorAll('.cii-img-block').forEach(block => {
                 if (!block.closest('.mes_text')) {
@@ -823,10 +853,10 @@ async function processAllMessages() {
             textElements.forEach(el => {
                 if (removedOutsideBody) processedHashes.delete(el);
                 const text = el.textContent || '';
-                const hash = simpleHash(text);
+                const hash = simpleHash(`${text}\n${matchableMessageText ?? ''}`);
                 if (processedHashes.get(el) === hash) return;
                 processedHashes.set(el, hash);
-                applyRulesToElement(el);
+                applyRulesToElement(el, matchableMessageText);
             });
         }
     } finally {

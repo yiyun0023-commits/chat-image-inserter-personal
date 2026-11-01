@@ -17,6 +17,8 @@ const COLLAPSED_GROUPS_KEY = 'cii-collapsed-groups';
 const defaultSettings = {
     enabled: true,
     maxWidth: 300,
+    portraitMaxWidth: 300,
+    landscapeMaxWidth: 300,
     recentMessages: 0,
     themeMode: 'auto',
     compressLevel: 0, // 0=原图 1=轻度 2=中度 3=强力 4=极限
@@ -362,6 +364,9 @@ function getSettings() {
     const s = extension_settings[EXT_NAME];
     if (!Array.isArray(s.rules)) s.rules = [];
     if (typeof s.maxWidth !== 'number') s.maxWidth = defaultSettings.maxWidth;
+    s.maxWidth = normalizeImageMaxWidth(s.maxWidth, defaultSettings.maxWidth);
+    s.portraitMaxWidth = normalizeImageMaxWidth(s.portraitMaxWidth, s.maxWidth);
+    s.landscapeMaxWidth = normalizeImageMaxWidth(s.landscapeMaxWidth, s.maxWidth);
     if (typeof s.enabled !== 'boolean') s.enabled = defaultSettings.enabled;
     migrateSettings(s);
     return s;
@@ -407,6 +412,21 @@ function getImageUrlOfItem(img) {
     if (!img) return null;
     if (img.imageSrc) return img.imageSrc;
     return img.imageId ? (urlCache.get(img.imageId) || null) : null;
+}
+
+function normalizeImageMaxWidth(value, fallback = 300) {
+    return Math.max(40, Math.min(1200, Number(value) || fallback));
+}
+
+function applyImageMaxWidth(img, settings = getSettings()) {
+    if (!img) return;
+    const hasDimensions = img.naturalWidth > 0 && img.naturalHeight > 0;
+    const isPortrait = hasDimensions && img.naturalHeight > img.naturalWidth;
+    const configuredWidth = hasDimensions
+        ? (isPortrait ? settings.portraitMaxWidth : settings.landscapeMaxWidth)
+        : Math.max(settings.portraitMaxWidth, settings.landscapeMaxWidth);
+    const maxWidth = normalizeImageMaxWidth(configuredWidth);
+    img.style.setProperty('max-width', `min(100%, ${maxWidth}px)`, 'important');
 }
 
 function getUsableImages(rule) {
@@ -462,8 +482,6 @@ function createImageElement(rule) {
     const usable = getUsableImages(rule);
     if (!usable.length) return null;
 
-    const maxWidth = Math.max(40, Math.min(1200, Number(s.maxWidth) || 300));
-
     const wrap = document.createElement('div');
     wrap.className = 'cii-img-block';
     if (usable.length > 1) wrap.classList.add('cii-multi');
@@ -474,16 +492,17 @@ function createImageElement(rule) {
 
     const img = document.createElement('img');
     img.className = 'cii-inserted-image';
-    img.src = getImageUrlOfItem(usable[0]);
     img.alt = '';
     img.loading = 'lazy';
-    // 关键修复：使用设置里的像素值，而不是 '100%'
-    img.style.setProperty('max-width', `min(100%, ${maxWidth}px)`, 'important');
+    // Load the image's intrinsic dimensions before choosing the portrait/landscape limit.
+    img.style.setProperty('max-width', `min(100%, ${Math.max(s.portraitMaxWidth, s.landscapeMaxWidth)}px)`, 'important');
     img.style.width = 'auto';
     img.style.height = 'auto';
     img.style.display = 'block';
     img.style.setProperty('margin-left', 'auto', 'important');
     img.style.setProperty('margin-right', 'auto', 'important');
+    img.addEventListener('load', () => applyImageMaxWidth(img));
+    img.src = getImageUrlOfItem(usable[0]);
 
     let currentIndex = 0;
 
@@ -1285,11 +1304,13 @@ async function exportData() {
     const zip = new JSZip();
     const config = {
         format: 'chat-image-inserter',
-        version: 4,
+        version: 5,
         exportedAt: new Date().toISOString(),
         settings: {
             enabled: s.enabled,
             maxWidth: s.maxWidth,
+            portraitMaxWidth: s.portraitMaxWidth,
+            landscapeMaxWidth: s.landscapeMaxWidth,
             recentMessages: s.recentMessages,
             compressLevel: s.compressLevel,
         },
@@ -1705,10 +1726,14 @@ function buildSettingsHtml() {
                                 <span class="cii-switch-label">启用</span>
                             </label>
                             <div class="cii-spacer"></div>
-                            <label class="cii-inline-label">图片最大宽度</label>
-                            <input type="number" id="cii-maxwidth" class="text_pole cii-num" min="40" max="1200" step="10">
+                            <label class="cii-inline-label">竖版最大宽度</label>
+                            <input type="number" id="cii-portrait-maxwidth" class="text_pole cii-num" min="40" max="1200" step="10">
+                            <span class="cii-unit">px</span>
+                            <label class="cii-inline-label">横版最大宽度</label>
+                            <input type="number" id="cii-landscape-maxwidth" class="text_pole cii-num" min="40" max="1200" step="10">
                             <span class="cii-unit">px</span>
                         </div>
+                        <div class="cii-dim cii-tiny">插件按图片原始宽高区分竖版和横版；正方形图片使用横版上限。图片会保持原始比例。</div>
                         <div class="cii-row" style="margin-top:10px;">
                             <label class="cii-inline-label" style="min-width:auto;">界面主题</label>
                             <select id="cii-theme" class="text_pole" style="min-width:150px;">
@@ -1868,17 +1893,15 @@ function bindEvents() {
         });
 
     $(document)
-        .off('input.cii', '#cii-maxwidth')
-        .on('input.cii', '#cii-maxwidth', function () {
+        .off('input.cii', '#cii-portrait-maxwidth, #cii-landscape-maxwidth')
+        .on('input.cii', '#cii-portrait-maxwidth, #cii-landscape-maxwidth', function () {
             const v = Math.max(40, Math.min(1200, Number(this.value) || 300));
-            getSettings().maxWidth = v;
+            const s = getSettings();
+            if (this.id === 'cii-portrait-maxwidth') s.portraitMaxWidth = v;
+            else s.landscapeMaxWidth = v;
+            s.maxWidth = Math.max(s.portraitMaxWidth, s.landscapeMaxWidth);
             saveSettings();
-            document.querySelectorAll('#chat .cii-img-block').forEach(block => {
-                block.style.setProperty('max-width', '100%', 'important');
-                block.querySelectorAll('.cii-inserted-image').forEach(img => {
-                    img.style.setProperty('max-width', `min(100%, ${v}px)`, 'important');
-                });
-            });
+            document.querySelectorAll('#chat .cii-inserted-image').forEach(img => applyImageMaxWidth(img, s));
             resetProcessing();
             scheduleProcess();
         });
@@ -2783,7 +2806,8 @@ function injectStyles() {
 async function loadSettings() {
     const s = getSettings();
     $('#cii-enabled').prop('checked', s.enabled !== false);
-    $('#cii-maxwidth').val(s.maxWidth || 300);
+    $('#cii-portrait-maxwidth').val(s.portraitMaxWidth || s.maxWidth || 300);
+    $('#cii-landscape-maxwidth').val(s.landscapeMaxWidth || s.maxWidth || 300);
     $('#cii-recent').val(Math.max(0, Math.floor(Number(s.recentMessages) || 0)));
     $('#cii-excluded-tags').val(formatExcludedTags(s.excludedTags));
     $('#cii-theme').val(s.themeMode || 'auto');

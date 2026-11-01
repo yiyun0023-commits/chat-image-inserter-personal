@@ -14,7 +14,7 @@ Chat Image Inserter 是一款为 SillyTavern（酒馆）设计的轻量级扩展
 
 次数限流：每条规则可设置"每则消息最多插入 N 次"，0 表示不限，避免长回复里同一张图刷屏。
 
-尺寸控制：图片最大宽度全局可调，适配不同屏幕与布局。
+尺寸控制：竖版图片和横版图片可分别设置最大宽度，图片保持原始比例；正方形图片使用横版上限。
 
 存储管理：实时显示已缓存图片的数量与占用空间，一键清除全部图片（规则保留，只需重新上传）。
 
@@ -22,3 +22,4 @@ Chat Image Inserter 是一款为 SillyTavern（酒馆）设计的轻量级扩展
 
 
 Chat Image Inserter is a lightweight extension for SillyTavern that makes text in roleplay conversations automatically "grow" images. When the AI's output contains a keyword or regex pattern you've defined, the plugin seamlessly inserts the corresponding local image right below the matched text 
+

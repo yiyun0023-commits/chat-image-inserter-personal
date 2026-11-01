@@ -2651,11 +2651,11 @@ function injectStyles() {
         /* ============ 聊天里插入的图片（支持多图切换） ============ */
         .cii-img-block {
             position: relative;
-            display: inline-block;
+            display: block;
+            width: fit-content;
             margin: 6px auto;
             max-width: 100%;
             line-height: 0;
-            vertical-align: middle;
         }
         .cii-img-block .cii-inserted-image {
             display: block;

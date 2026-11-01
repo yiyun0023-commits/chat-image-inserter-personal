@@ -676,6 +676,41 @@ function findParagraphElement(node, container) {
     return blockFallback || (node.parentElement === container ? node : node.parentElement);
 }
 
+let chatImageAlignmentObserver = null;
+
+function alignImageBlocksToMessage(container) {
+    const messageBody = container.closest('.mes_text') || container;
+    const bodyRect = messageBody.getBoundingClientRect();
+    const bodyStyle = window.getComputedStyle(messageBody);
+    const paddingLeft = parseFloat(bodyStyle.paddingLeft) || 0;
+    const paddingRight = parseFloat(bodyStyle.paddingRight) || 0;
+    const bodyContentLeft = bodyRect.left + messageBody.clientLeft + paddingLeft;
+    const bodyContentWidth = Math.max(0, messageBody.clientWidth - paddingLeft - paddingRight);
+
+    messageBody.querySelectorAll('.cii-img-block').forEach(block => {
+        const parent = block.parentElement;
+        if (!parent) return;
+        const parentRect = parent.getBoundingClientRect();
+        const parentStyle = window.getComputedStyle(parent);
+        const parentContentLeft = parentRect.left + parent.clientLeft + (parseFloat(parentStyle.paddingLeft) || 0);
+        block.style.setProperty('position', 'relative', 'important');
+        block.style.setProperty('left', `${bodyContentLeft - parentContentLeft}px`, 'important');
+        block.style.setProperty('width', `${bodyContentWidth}px`, 'important');
+        block.style.setProperty('max-width', 'none', 'important');
+        block.style.setProperty('margin', '6px 0', 'important');
+    });
+
+    if (!chatImageAlignmentObserver && typeof ResizeObserver !== 'undefined') {
+        const chat = document.querySelector('#chat');
+        if (chat) {
+            chatImageAlignmentObserver = new ResizeObserver(() => {
+                document.querySelectorAll('#chat .mes_text').forEach(body => alignImageBlocksToMessage(body));
+            });
+            chatImageAlignmentObserver.observe(chat);
+        }
+    }
+}
+
 function applyRulesToElement(container, matchableMessageText = null) {
     const s = getSettings();
     container.querySelectorAll('.cii-img-block').forEach(el => el.remove());
@@ -824,6 +859,8 @@ function applyRulesToElement(container, matchableMessageText = null) {
         anchor.parentNode.insertBefore(block, anchor.nextSibling);
         paragraphAnchors.set(paragraph, block);
     }
+
+    alignImageBlocksToMessage(container);
 }
 
 async function processAllMessages() {

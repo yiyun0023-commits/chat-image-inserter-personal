@@ -660,6 +660,17 @@ function getMatchableMessageText(messageElement) {
 }
 
 function isAssistantMessageElement(messageElement) {
+    if (!messageElement) return false;
+
+    // Check SillyTavern's rendered message marker first. This remains reliable
+    // even if the DOM message id and chat-array index temporarily disagree.
+    if (messageElement.matches('.mes.user, .mes[is_user="true"], .mes[data-is-user="true"]')) {
+        return false;
+    }
+    if (messageElement.matches('.mes.system, .mes[is_system="true"], .mes[data-is-system="true"]')) {
+        return false;
+    }
+
     const context = window.SillyTavern?.getContext?.();
     const messageId = Number(messageElement?.getAttribute('mesid'));
     const chatMessage = Number.isInteger(messageId) ? context?.chat?.[messageId] : null;

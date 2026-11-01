@@ -468,6 +468,9 @@ function createImageElement(rule) {
     wrap.className = 'cii-img-block';
     if (usable.length > 1) wrap.classList.add('cii-multi');
     wrap.style.setProperty('max-width', '100%', 'important');
+    wrap.style.setProperty('display', 'block', 'important');
+    wrap.style.setProperty('width', '100%', 'important');
+    wrap.style.setProperty('margin', '6px 0', 'important');
 
     const img = document.createElement('img');
     img.className = 'cii-inserted-image';
@@ -479,6 +482,8 @@ function createImageElement(rule) {
     img.style.width = 'auto';
     img.style.height = 'auto';
     img.style.display = 'block';
+    img.style.setProperty('margin-left', 'auto', 'important');
+    img.style.setProperty('margin-right', 'auto', 'important');
 
     let currentIndex = 0;
 
@@ -2651,14 +2656,17 @@ function injectStyles() {
         /* ============ 聊天里插入的图片（支持多图切换） ============ */
         .cii-img-block {
             position: relative;
-            display: block;
-            width: fit-content;
-            margin: 6px auto;
-            max-width: 100%;
+            display: block !important;
+            width: 100% !important;
+            margin: 6px 0 !important;
+            max-width: 100% !important;
             line-height: 0;
+            text-align: center;
         }
         .cii-img-block .cii-inserted-image {
             display: block;
+            margin-left: auto !important;
+            margin-right: auto !important;
             max-width: 100%;
             height: auto;
             border-radius: 10px;

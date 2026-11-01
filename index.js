@@ -303,6 +303,56 @@ async function ensureUrlFromIndexedDB(imageId) {
     return url;
 }
 
+async function ensureUrlsForRule(rule) {
+    if (!Array.isArray(rule?.images)) return;
+    for (const img of rule.images) {
+        if (img.imageId && !urlCache.has(img.imageId)) {
+            await ensureUrlFromIndexedDB(img.imageId);
+        }
+    }
+}
+
+async function ensureUrlsForMatchingRules(text) {
+    const s = getSettings();
+    for (const rule of s.rules) {
+        if (rule.enabled === false || !rule.pattern || !Array.isArray(rule.images) || !rule.images.length) continue;
+        if (findMatches(text, rule).length) await ensureUrlsForRule(rule);
+    }
+}
+
+let previewImageObserver = null;
+
+function observePreviewImage(imageElement, imageId) {
+    if (!imageElement || !imageId) return;
+    if (urlCache.has(imageId)) {
+        imageElement.src = urlCache.get(imageId);
+        return;
+    }
+
+    if (typeof IntersectionObserver !== 'undefined') {
+        if (!previewImageObserver) {
+            previewImageObserver = new IntersectionObserver(entries => {
+                for (const entry of entries) {
+                    if (!entry.isIntersecting) continue;
+                    const target = entry.target;
+                    const id = target.dataset.ciiImageId;
+                    previewImageObserver.unobserve(target);
+                    ensureUrlFromIndexedDB(id).then(url => {
+                        if (url && target.isConnected) target.src = url;
+                    }).catch(error => console.warn('[CII] 加载图片预览失败', error));
+                }
+            }, { rootMargin: '120px' });
+        }
+        imageElement.dataset.ciiImageId = imageId;
+        previewImageObserver.observe(imageElement);
+        return;
+    }
+
+    ensureUrlFromIndexedDB(imageId).then(url => {
+        if (url && imageElement.isConnected) imageElement.src = url;
+    }).catch(error => console.warn('[CII] 加载图片预览失败', error));
+}
+
 /* ================= 设置 ================= */
 
 function migrateSettings(s) {
@@ -436,18 +486,6 @@ function getUsableImages(rule) {
 
 function ruleHasImageReady(rule) {
     return getUsableImages(rule).length > 0;
-}
-
-async function ensureAllUrls() {
-    const s = getSettings();
-    for (const rule of s.rules) {
-        if (!Array.isArray(rule.images)) continue;
-        for (const img of rule.images) {
-            if (img.imageId && !urlCache.has(img.imageId)) {
-                await ensureUrlFromIndexedDB(img.imageId);
-            }
-        }
-    }
 }
 
 /* ================= 匹配 ================= */
@@ -915,8 +953,6 @@ async function processAllMessages() {
             document.querySelectorAll('#chat .mes .cii-img-block').forEach(el => el.remove());
             return;
         }
-        await ensureAllUrls();
-
         const recentN = Math.max(0, Math.floor(Number(s.recentMessages) || 0));
         const allMes = Array.from(document.querySelectorAll('#chat .mes'));
         const total = allMes.length;
@@ -945,6 +981,7 @@ async function processAllMessages() {
             }
             const textElements = Array.from(message.querySelectorAll('.mes_text'));
             const matchableMessageText = getMatchableMessageText(message);
+            await ensureUrlsForMatchingRules(matchableMessageText);
             let removedOutsideBody = false;
             message.querySelectorAll('.cii-img-block').forEach(block => {
                 if (!block.closest('.mes_text')) {
@@ -1181,7 +1218,6 @@ async function recompressAllImages() {
             }
         }
 
-        await ensureAllUrls();
         await refreshStats();
         renderRules();
         resetProcessing();
@@ -1228,19 +1264,17 @@ async function refreshPreview($rule, rule) {
     $src.text(`共 ${images.length} 张图片${images.length > 1 ? ' · 正文中点击图片可切换' : ''}`);
 
     for (const img of images) {
-        let url = getImageUrlOfItem(img);
-        if (!url && img.imageId) {
-            url = await ensureUrlFromIndexedDB(img.imageId);
-        }
-        if (!url) continue;
-
         const $item = $(`
             <div class="cii-image-item" data-image-id="${escapeHtml(img.imageId || '')}">
-                <img src="${escapeHtml(url)}" alt="">
+                <img alt="" loading="lazy">
                 <button type="button" class="cii-image-remove" title="删除这张图片">×</button>
             </div>
         `);
         $addBtn.before($item);
+        const imageElement = $item.find('img')[0];
+        const existingUrl = getImageUrlOfItem(img);
+        if (existingUrl) imageElement.src = existingUrl;
+        else if (img.imageId) observePreviewImage(imageElement, img.imageId);
     }
 }
 
@@ -1427,8 +1461,6 @@ async function importData(file) {
                 const typedBlob = blob.type ? blob : new Blob([blob], { type: 'image/png' });
                 const imageId = uid('img_') + '_' + i + '_' + j;
                 await putImage(imageId, typedBlob, { name: imageFiles[j], type: typedBlob.type });
-                const url = URL.createObjectURL(typedBlob);
-                urlCache.set(imageId, url);
                 rule.images.push({ imageId, imageType: typedBlob.type });
                 imageLoaded++;
             } catch (e) { console.warn('[CII] 图片导入失败', e); }
@@ -1456,7 +1488,6 @@ async function importData(file) {
     s.rules.push(...newRules);
     saveSettings();
 
-    await ensureAllUrls();
     const set = loadSet(COLLAPSED_KEY);
     for (const rule of newRules) set.add(rule.id);
     saveSet(COLLAPSED_KEY, set);
@@ -2835,7 +2866,6 @@ jQuery(async () => {
     startObserver();
     registerEvents();
 
-    await ensureAllUrls();
     renderRules();
 
     setTimeout(() => {

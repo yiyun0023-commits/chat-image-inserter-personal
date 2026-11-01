@@ -625,7 +625,10 @@ function getMatchableMessageText(messageElement) {
         const context = window.SillyTavern?.getContext?.();
         const messageId = Number(messageElement?.getAttribute('mesid'));
         const rawText = context?.chat?.[messageId]?.mes;
-        if (typeof rawText !== 'string') return null;
+        if (typeof rawText !== 'string') {
+            // Do not fall back to scanning rendered text: it may include reasoning.
+            return '';
+        }
 
         // If the model wraps its answer in <content>, use only those body sections.
         const contentSections = [...rawText.matchAll(/<content\b[^>]*>([\s\S]*?)<\/content\s*>/gi)];
@@ -643,8 +646,8 @@ function getMatchableMessageText(messageElement) {
         }
         return matchableText;
     } catch (e) {
-        console.warn('[CII] 读取消息原文失败，改用页面正文', e);
-        return null;
+        console.warn('[CII] 读取消息原文失败，本条消息跳过图片匹配', e);
+        return '';
     }
 }
 
@@ -671,7 +674,7 @@ function applyRulesToElement(container, matchableMessageText = null) {
     container.normalize();
 
     const rules = s.rules.filter(r => r.enabled !== false && r.pattern && ruleHasImageReady(r)
-        && (matchableMessageText === null || findMatches(matchableMessageText, r).length > 0));
+        && findMatches(matchableMessageText, r).length > 0);
     if (!rules.length) return;
     // Always skip the reasoning section. User-configured tags extend this default.
     const excludedTagPairs = getExcludedTagPairs([
@@ -715,9 +718,14 @@ function applyRulesToElement(container, matchableMessageText = null) {
                 }
             }
         });
-        ruleMatches.sort((a, b) => a.nodeIdx - b.nodeIdx || a.start - b.start);
+        // The source text above is authoritative. If thinking and body text are
+        // both present in the rendered tree, keep only the rightmost occurrences
+        // counted in the body source (the <content> block follows <thinking>).
+        const allowedBodyMatches = findMatches(matchableMessageText, rule).length;
+        const bodyMatches = ruleMatches.slice(-allowedBodyMatches);
+        bodyMatches.sort((a, b) => a.nodeIdx - b.nodeIdx || a.start - b.start);
         const max = getRuleMaxMatches(rule);
-        allMatches.push(...(max > 0 ? ruleMatches.slice(0, max) : ruleMatches));
+        allMatches.push(...(max > 0 ? bodyMatches.slice(0, max) : bodyMatches));
     }
     if (!allMatches.length) return;
 

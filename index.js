@@ -462,9 +462,12 @@ function createImageElement(rule) {
     const usable = getUsableImages(rule);
     if (!usable.length) return null;
 
+    const maxWidth = Math.max(40, Math.min(1200, Number(s.maxWidth) || 300));
+
     const wrap = document.createElement('div');
     wrap.className = 'cii-img-block';
     if (usable.length > 1) wrap.classList.add('cii-multi');
+    wrap.style.setProperty('max-width', '100%', 'important');
 
     const img = document.createElement('img');
     img.className = 'cii-inserted-image';
@@ -472,7 +475,7 @@ function createImageElement(rule) {
     img.alt = '';
     img.loading = 'lazy';
     // 关键修复：使用设置里的像素值，而不是 '100%'
-    img.style.maxWidth = (s.maxWidth || 300) + 'px';
+    img.style.setProperty('max-width', `min(100%, ${maxWidth}px)`, 'important');
     img.style.width = 'auto';
     img.style.height = 'auto';
     img.style.display = 'block';
@@ -1796,6 +1799,12 @@ function bindEvents() {
             const v = Math.max(40, Math.min(1200, Number(this.value) || 300));
             getSettings().maxWidth = v;
             saveSettings();
+            document.querySelectorAll('#chat .cii-img-block').forEach(block => {
+                block.style.setProperty('max-width', '100%', 'important');
+                block.querySelectorAll('.cii-inserted-image').forEach(img => {
+                    img.style.setProperty('max-width', `min(100%, ${v}px)`, 'important');
+                });
+            });
             resetProcessing();
             scheduleProcess();
         });

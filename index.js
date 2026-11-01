@@ -659,6 +659,18 @@ function getMatchableMessageText(messageElement) {
     }
 }
 
+function isAssistantMessageElement(messageElement) {
+    const context = window.SillyTavern?.getContext?.();
+    const messageId = Number(messageElement?.getAttribute('mesid'));
+    const chatMessage = Number.isInteger(messageId) ? context?.chat?.[messageId] : null;
+
+    // Only process messages whose sender is explicitly identified as the AI.
+    // This prevents a user's newest message from being treated as the latest AI reply.
+    return !!chatMessage
+        && chatMessage.is_user === false
+        && chatMessage.is_system !== true;
+}
+
 /* ================= 应用规则到容器 ================= */
 
 function findParagraphElement(node, container) {
@@ -892,6 +904,15 @@ async function processAllMessages() {
         }
         for (let i = startIdx; i < total; i++) {
             const message = allMes[i];
+            if (!isAssistantMessageElement(message)) {
+                message.querySelectorAll('.cii-img-block').forEach(block => {
+                    const parent = block.parentNode;
+                    block.remove();
+                    parent?.normalize?.();
+                });
+                message.querySelectorAll('.mes_text').forEach(el => processedHashes.delete(el));
+                continue;
+            }
             const textElements = Array.from(message.querySelectorAll('.mes_text'));
             const matchableMessageText = getMatchableMessageText(message);
             let removedOutsideBody = false;
